@@ -36,32 +36,32 @@ import tdscha.Perturbations as perturbations
 
 
 # Try to import the julia module
+#__JULIA_EXT__ = False
+#try:
+#    import julia, julia.Main
+#
+#    # Compile the tdscha code
+#    julia.Main.include(os.path.join(os.path.dirname(__file__), "tdscha_core.jl"))
+#    __JULIA_EXT__ = True
+#except:
+#    pass
+
+# Try to import the julia module
 __JULIA_EXT__ = False
 try:
+    print('Try')
     import julia, julia.Main
-
-    # Compile the tdscha code
     julia.Main.include(os.path.join(os.path.dirname(__file__), "tdscha_core.jl"))
     __JULIA_EXT__ = True
 except:
-    pass
-
-# Try to import the julia module
-__JULIA_EXT__ = False
-try:
-    import julia, julia.Main
-    julia.Main.include(os.path.join(os.path.dirname(__file__), 
-        "tdscha_core.jl"))
-    __JULIA_EXT__ = True
-except:
+    print('Except')
     try:
         import julia
         from julia.api import Julia
         jl = Julia(compiled_modules=False)
         import julia.Main
         try:
-            julia.Main.include(os.path.join(os.path.dirname(__file__),
-                "tdscha_core.jl"))
+            julia.Main.include(os.path.join(os.path.dirname(__file__), "tdscha_core.jl"))
             __JULIA_EXT__ = True
         except:
             # Install the required modules
@@ -82,38 +82,38 @@ Pkg.add("InteractiveUtils")
 
 
 # Try to import the julia module
-__JULIA_EXT__ = False
-try:
-    import julia, julia.Main
-    julia.Main.include(os.path.join(os.path.dirname(__file__), 
-        "tdscha_core.jl"))
-    __JULIA_EXT__ = True
-except:
-    try:
-        import julia
-        from julia.api import Julia
-        jl = Julia(compiled_modules=False)
-        import julia.Main
-        try:
-            julia.Main.include(os.path.join(os.path.dirname(__file__),
-                "tdscha_core.jl"))
-            __JULIA_EXT__ = True
-        except:
-            # Install the required modules
-            julia.Main.eval("""
-using Pkg
-Pkg.add("SparseArrays")
-Pkg.add("InteractiveUtils")
-""")
-            try:
-                julia.Main.include(os.path.join(os.path.dirname(__file__),
-                    "tdscha_core.jl"))
-                __JULIA_EXT__ = True
-            except Exception as e:
-                warnings.warn("Julia extension not available.\nError: {}".format(e))
-    except Exception as e:
-        warnings.warn("Julia extension not available.\nError: {}".format(e))
-    pass
+#__JULIA_EXT__ = False
+#try:
+#    import julia, julia.Main
+#    julia.Main.include(os.path.join(os.path.dirname(__file__), 
+#        "tdscha_core.jl"))
+#    __JULIA_EXT__ = True
+#except:
+#    try:
+#        import julia
+#        from julia.api import Julia
+#        jl = Julia(compiled_modules=False)
+#        import julia.Main
+#        try:
+#            julia.Main.include(os.path.join(os.path.dirname(__file__),
+#                "tdscha_core.jl"))
+#            __JULIA_EXT__ = True
+#        except:
+#            # Install the required modules
+#            julia.Main.eval("""
+#using Pkg
+#Pkg.add("SparseArrays")
+#Pkg.add("InteractiveUtils")
+#""")
+#            try:
+#                julia.Main.include(os.path.join(os.path.dirname(__file__),
+#                    "tdscha_core.jl"))
+#                __JULIA_EXT__ = True
+#            except Exception as e:
+#                warnings.warn("Julia extension not available.\nError: {}".format(e))
+#    except Exception as e:
+#        warnings.warn("Julia extension not available.\nError: {}".format(e))
+#    pass
 
 
 # Define a generic type for the double precision.
@@ -171,12 +171,12 @@ MODE_SLOW_SERIAL = 0
 def is_julia_enabled():
     return __JULIA_EXT__
 
-def is_julia_enabled():
-    return __JULIA_EXT__
+#def is_julia_enabled():
+#    return __JULIA_EXT__
 
 
-def is_julia_enabled():
-    return __JULIA_EXT__
+#def is_julia_enabled():
+#    return __JULIA_EXT__
 
 
 class Lanczos(object):
@@ -301,6 +301,11 @@ class Lanczos(object):
         # This flag is usefull to work with 1D or 2D systems
         # Default is False meaning that we ignore only translational modes
         self.ignore_small_w = False
+        
+        # Cutoff the anaharmonic part, the atoms at a distance larger than r_cutoff will not interact anharmonically
+        self.cutoff = False
+        self.r_cutoff = 1000.
+        self.tensor_cutoff = False
 
         # Setup the attribute control
         self.__total_attributes__ = [item for item in self.__dict__.keys()]
@@ -353,6 +358,7 @@ Error, 'select_modes' should be an array of the same lenght of the number of mod
 
         # Get the frequencies in Ry and polarization vectors
         self.w = ws[good_mask]
+        # The indices are (3 * N_atoms, N_modes)
         self.pols = pols[:, good_mask]
 
         # Correctly reshape the polarization in case only one mode is selected
@@ -3195,7 +3201,11 @@ Error, for the static calculation the vector must be of dimension {}, got {}
         
         # END OF THE OLD VERSION
 
-        
+        # Use a cutoff is the flag is turned on
+        if self.cutoff:
+            print('Apply the real space cutoff on the anharmonic part!')
+            d2v_pert_av = self.apply_tensor_cutoff(d2v_pert_av)
+            
         # Get the final vector
         final_psi = np.zeros(self.psi.shape, dtype = np.double)
         
@@ -4948,7 +4958,8 @@ Max number of iterations: {}
         return -np.imag(spectral)
 
 
-    def get_green_function_continued_fraction(self, w_array : np.ndarray[np.float64], use_terminator : bool = True, last_average: int = 1, smearing : np.float64 = 0):
+    #def get_green_function_continued_fraction(self, w_array : np.ndarray[np.float64], use_terminator : bool = True, last_average: int = 1, smearing : np.float64 = 0):
+    def get_green_function_continued_fraction(self, w_array, use_terminator = True, last_average = 1, smearing = 0):
         r"""
         CONTINUED FRACTION GREEN FUNCTION
         =================================
@@ -5837,6 +5848,66 @@ Sign = {}""".format(self.use_wigner, use_terminator, self.perturbation_modulus, 
             print()
         
         return double_mask
+    
+    
+    def get_tensor_cutoff(self):
+        """
+        GET THE TENSOR CUTOFF FOR TDSCHA
+        ================================
+        
+        Returns a symmetric tensor in the real space supercell with 0
+        where the atoms dist more than a cutoff distance specified by self.r_cutoff in Angstrom
+        
+        Returns
+        -------
+            -tensor: a 3xN_at_sc, 3xN_at_sc np.array tensor with zeros if the atoms are too far away
+        """
+        # The number of atoms in the supercell
+        N_at_sc = self.super_structure.N_atoms
+        # Prepare the result
+        tensor = np.ones((3 * N_at_sc, 3 * N_at_sc), dtype = np.double)
+        
+        # Start computing the distances
+        for i in range(N_at_sc):
+            for j in range(i + 1, N_at_sc):
+                d = self.super_structure.get_min_dist(i,j)
+                if d > self.r_cutoff:
+                    tensor[3 * i : 3 * i + 3, 3 * j : 3 * j + 3] = tensor[3 * j : 3 * j + 3, 3 * i : 3 * i + 3] = 0.
+        
+        # Check if everything was correct
+        if np.any(np.abs(tensor - tensor.T) > 1e-10):
+            raise ValueError('The cutoff tensor is not symmetric!')
+        
+        return tensor
+    
+    
+    def apply_tensor_cutoff(self, in_tensor):
+        """
+        APPLY THE CUTOFF ON A TENSOR IN THE POLARIZATION BASIS
+        ======================================================
+        
+        Given a tensor in the polarization basis we trasnform it in real space using the polarization vectors
+        then we apply the cutoff, i.e. we set to zero the elements corresponding to atoms that dist more than r_cutoff
+        
+        Parameters:
+        -----------
+            -in_tensor: a symmetric tensor in polarization space, i.e. a np.array of shape (N_modes, N_modes)
+        
+        Returns:
+        --------
+            -out_tensor: a symmetric tensor in polarization space after the real space cutoff has been applied
+        """
+        # Transform the tensor in real space (3 N_at_sc, 3 N_at_sc)
+        # The self.pols have dimensions of (3 N_at_sc, N_modes)
+        in_R_tensor = np.einsum('mn, am, bn -> ab', in_tensor, self.pols, self.pols)
+        
+        # Apply the real space tensor cutoff (3 N_at_sc, 3 N_at_sc)
+        out_R_tensor = in_R_tensor * self.tensor_cutoff
+        
+        # Get back the result in polarization space (N_modes, N_modes)
+        out_tensor = np.einsum("ab, am, bn -> mn", out_R_tensor, self.pols, self.pols)
+    
+        return out_tensor
 
 
             
@@ -5925,6 +5996,14 @@ Use prepare_raman/ir or prepare_perturbation before calling the run method.
                 print('Getting the mask dot product')
                 print()
             mask_dot = self.mask_dot_wigner(debug)
+            
+        
+        if self.cutoff:
+            if verbose:
+                print('Apply a cutoff for atoms separated by more than {:.4f} Angstrom'.format(self.r_cutoff))
+                print('Getting the mask for the cutoff')
+                print()
+                self.tensor_cutoff = self.get_tensor_cutoff()
 
 
         

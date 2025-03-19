@@ -1,0 +1,12 @@
+Metadata-Version: 2.1
+Name: tdscha
+Version: 1.5.0
+Summary: Time Dependent Self Consistent Harmonic Approximation
+Home-page: https://github.com/SSCHAcode/tdscha
+Author: Lorenzo Monacelli
+License: GPLv3
+Requires-Dist: numpy
+Requires-Dist: ase
+Requires-Dist: scipy
+Requires-Dist: cellconstructor
+Requires-Dist: python-sscha
