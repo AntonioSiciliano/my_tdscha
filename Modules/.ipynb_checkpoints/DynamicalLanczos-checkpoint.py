@@ -305,6 +305,8 @@ class Lanczos(object):
         # Cutoff the anaharmonic part, the atoms at a distance larger than r_cutoff will not interact anharmonically
         self.cutoff = False
         self.r_cutoff = 1000.
+        # The cutoff tensors of shpae (N_modes, N_modes)
+        # It is one where the atoms are closer than r_cutoff otherwise is zero
         self.tensor_cutoff = False
 
         # Setup the attribute control
@@ -3203,7 +3205,7 @@ Error, for the static calculation the vector must be of dimension {}, got {}
 
         # Use a cutoff is the flag is turned on
         if self.cutoff:
-            print('Apply the real space cutoff on the anharmonic part!')
+            print('Apply the real space cutoff on the anharmonic part..')
             d2v_pert_av = self.apply_tensor_cutoff(d2v_pert_av)
             
         # Get the final vector
@@ -5860,54 +5862,74 @@ Sign = {}""".format(self.use_wigner, use_terminator, self.perturbation_modulus, 
         
         Returns
         -------
-            -tensor: a 3xN_at_sc, 3xN_at_sc np.array tensor with zeros if the atoms are too far away
+            -tensor: a N_modes, N_modes np.array tensor with zeros if the atoms are too far away
         """
         # The number of atoms in the supercell
         N_at_sc = self.super_structure.N_atoms
-        # Prepare the result
+        # Prepare the real space cutoff matrix
         tensor = np.ones((3 * N_at_sc, 3 * N_at_sc), dtype = np.double)
         
         # Start computing the distances
         for i in range(N_at_sc):
             for j in range(i + 1, N_at_sc):
                 d = self.super_structure.get_min_dist(i,j)
+                # Set to zero the elements corresponding to atoms that are too far away
                 if d > self.r_cutoff:
                     tensor[3 * i : 3 * i + 3, 3 * j : 3 * j + 3] = tensor[3 * j : 3 * j + 3, 3 * i : 3 * i + 3] = 0.
         
         # Check if everything was correct
-        if np.any(np.abs(tensor - tensor.T) > 1e-10):
+        if np.any(np.abs(tensor - tensor.T)   > 1e-10):
             raise ValueError('The cutoff tensor is not symmetric!')
+            
+        if np.any(np.abs(np.diag(tensor) - 1) > 1e-10):
+            raise ValueError('The cutoff tensor is not one on the diagoanl!')
+            
+        # The self.pols have dimensions of (3 N_at_sc, N_modes)
+        #tmp  = np.einsum('ab, am -> mb', tensor, self.pols)
+        
+        # Prepare the output
+        #pols_tensor = np.einsum('mb, bn -> mn', tmp, self.pols)
+        
+        # Check if everything was correct
+        #if np.any(np.abs(pols_tensor - pols_tensor.T) > 1e-10):
+        #    raise ValueError('The cutoff tensor in polarization basis is not symmetric!')
         
         return tensor
     
     
     def apply_tensor_cutoff(self, in_tensor):
         """
-        APPLY THE CUTOFF ON A TENSOR IN THE POLARIZATION BASIS
-        ======================================================
+        APPLY THE CUTOFF ON A TENSOR IN THE REAL SPACE
+        ==============================================
         
-        Given a tensor in the polarization basis we trasnform it in real space using the polarization vectors
-        then we apply the cutoff, i.e. we set to zero the elements corresponding to atoms that dist more than r_cutoff
+        Given a tensor in the polarization basis we apply the real space cutoff,
+        i.e. we set to zero the elements corresponding to atoms that dist more than r_cutoff
+        
+        Note: the multiplication is done in real space
         
         Parameters:
         -----------
-            -in_tensor: a symmetric tensor in polarization space, i.e. a np.array of shape (N_modes, N_modes)
+            -in_tensor: a symmetric tensor in mode space, i.e. a np.array of shape (N_modes, N_modes)
         
         Returns:
         --------
-            -out_tensor: a symmetric tensor in polarization space after the real space cutoff has been applied
+            -new_tmp2: a symmetric tensor in polarization space, i.e. a np.array of shape (N_modes, N_modes), where the real space cutoff has been applied
         """
-        # Transform the tensor in real space (3 N_at_sc, 3 N_at_sc)
         # The self.pols have dimensions of (3 N_at_sc, N_modes)
-        in_R_tensor = np.einsum('mn, am, bn -> ab', in_tensor, self.pols, self.pols)
+        # Convert in real space
+        tmp  = np.einsum('mn, am -> an', in_tensor, self.pols)
+        tmp1 = np.einsum('an, bn -> ab',       tmp, self.pols)
         
-        # Apply the real space tensor cutoff (3 N_at_sc, 3 N_at_sc)
-        out_R_tensor = in_R_tensor * self.tensor_cutoff
+        # Real space cutoff as Hadamard product
+        cutoff_tensor = tmp1 * self.tensor_cutoff
         
-        # Get back the result in polarization space (N_modes, N_modes)
-        out_tensor = np.einsum("ab, am, bn -> mn", out_R_tensor, self.pols, self.pols)
+        # Return in mode basis 
+        new_tmp  = np.einsum('ab, am -> mb', cutoff_tensor, self.pols)
+        new_tmp2 = np.einsum('mb, bn -> mn', new_tmp, self.pols)
+        
+        return new_tmp2
     
-        return out_tensor
+    
 
 
             
@@ -6001,8 +6023,9 @@ Use prepare_raman/ir or prepare_perturbation before calling the run method.
         if self.cutoff:
             if verbose:
                 print('Apply a cutoff for atoms separated by more than {:.4f} Angstrom'.format(self.r_cutoff))
-                print('Getting the mask for the cutoff')
+                print('Getting the mask for the cutoff in polarization space')
                 print()
+                # The tensor cutoff is computed in real space
                 self.tensor_cutoff = self.get_tensor_cutoff()
 
 
